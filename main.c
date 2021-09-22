@@ -7,6 +7,7 @@
 #include "./adc.h"
 #include "./print.h"
 #include "./keypad.h"
+#include "./conversion.h"
 
 #define RELAY_A PC0
 #define RELAY_B PC1
@@ -14,16 +15,6 @@
 
 #define LDR PC3
 #define NTC PC4
-
-//Lux and Thermistor
-#define MAX_ADC_READING		1023
-#define ADC_REF_VOLTAGE		5.0
-#define REF_RESISTANCE		4700
-
-#define SERIES_RES		4.7		// series resistance
-#define NOM_RES			10.0		// nominal resistance (thermistor)
-#define BETA			3455		// beta (thermistor)
-#define NOM_TEMP		298.15		// nominal temperature (25 C)
 
 #define MENU_MAIN 0
 #define MENU_TIME 1
@@ -71,32 +62,6 @@ int lux_end = 600;
 
 int temp;
 int lux;
-
-float conversion_lux(uint16_t raw_adc)
-{
-	float vout, lux, rldr;
-	
-	vout = raw_adc * (ADC_REF_VOLTAGE / MAX_ADC_READING);
-	rldr = (REF_RESISTANCE * (ADC_REF_VOLTAGE - vout)) / vout;
-	lux = 500 / (rldr / 650);
-	
-	return lux;
-}
-
-float conversion_temp(uint16_t raw_adc)
-{
-	float vout, res, temp, celsius;
-	
-	vout = raw_adc * (ADC_REF_VOLTAGE / MAX_ADC_READING);
-	/* convert voltage measured to resistance value */
-	res = (vout * SERIES_RES) / (ADC_REF_VOLTAGE - vout);
-	/* use resistance value in Steinhart and Hart equation, calculate temperature value in kelvin */
-	temp =  1.0 / ((1.0 / NOM_TEMP) + ((log(res / NOM_RES)) / BETA));
-	/* convert kelvin to celsius */
-	celsius = temp - 273.15; // Converting kelvin to celsius
-	
-	return celsius;
-}
 
 void print_sensors() {
 
@@ -268,12 +233,64 @@ void set_time_component(Time* time, char component, int val) {
     }
 }
 
-int main() 
-{
-    DDRB |= 1 << PB7;
+void print_menu_time() {
+    hd44780_gotoxy(0, 0);
+    hd44780_print("Time");
 
+    hd44780_gotoxy(1, 0);
+    print_time(time);
+}
+
+void print_menu_alarm_time() {
+    hd44780_gotoxy(0, 0);
+    hd44780_print("Time relay");
+
+    hd44780_gotoxy(1, 0);
+    hd44780_print(" On  ");
+    print_time(time_on);
+
+    hd44780_gotoxy(2, 0);
+    hd44780_print(" Off ");
+    print_time(time_off);
+
+    hd44780_gotoxy(current_menu_section + 1, 0);
+    hd44780_print(">");
+}
+
+void print_menu_lux() {
+    hd44780_print("Lux relay");
+    hd44780_gotoxy(1, 0);
+    hd44780_print(" Start ");
+    hd44780_printint(lux_start);
+
+    hd44780_gotoxy(2, 0);
+    hd44780_print(" End   ");
+    hd44780_printint(lux_end);
+
+    hd44780_gotoxy(current_menu_section + 1, 0);
+    hd44780_print(">");
+}
+
+void print_menu_temp() {
+    hd44780_print("Temp relay");
+    hd44780_gotoxy(1, 0);
+    hd44780_print(" Start ");
+    hd44780_printint(temp_start);
+
+    hd44780_gotoxy(2, 0);
+    hd44780_print(" End   ");
+    hd44780_printint(temp_end);
+
+    hd44780_gotoxy(current_menu_section + 1, 0);
+    hd44780_print(">");
+}
+
+void init() {
+    // Init relay pins
     DDRC |= (1 << RELAY_A) | (1 << RELAY_B) | (1 << RELAY_C);
 
+
+    // Init timer
     TCNT1 = 0;
     TCCR1A = 0;
     TCCR1B = 0;
@@ -284,90 +301,69 @@ int main()
     
     TIMSK1 |= (1 << OCIE1A);
 
+
     hd44780_init();
     keypad_init();
     uart_init(57600, 1);
 	adc_init();
+}
+
+void clear_display() {
+    hd44780_cmd(0x01);
+    _delay_ms(3);
+}
+
+void next_menu() {
+    current_menu = current_menu + 1;
+    if (current_menu > 4) {
+        current_menu = MENU_MAIN;
+    }
+
+    current_menu_section = 0;
+    current_time_component = 0;
+    
+    clear_display();
+}
+
+void next_menu_item() {
+    current_menu_section = current_menu_section + 1;
+    current_time_component = 0;
+    if (current_menu == MENU_ALARM_TIME && current_menu_section > MENU_TIME_OFF) {
+        current_menu_section = MENU_TIME_ON;
+    }
+
+    if (current_menu == MENU_TEMP && current_menu_section > MENU_TEMP_END) {
+        current_menu_section = MENU_TEMP_START;
+    }
+
+    if (current_menu == MENU_LUX && current_menu_section > MENU_LUX_END) {
+        current_menu_section = MENU_LUX_START;
+    }
+    
+    clear_display();
+}
+
+int main() 
+{
+    init();
 
     for (;;) {
-        if (current_menu == MENU_MAIN) {
-            //print_sensors();
-        } else if (current_menu == MENU_TIME) {
-            hd44780_gotoxy(0, 0);
-            hd44780_print("Time");
-
-            hd44780_gotoxy(1, 0);
-            print_time(time);
+        if (current_menu == MENU_TIME) {
+            print_menu_time();
         } else if (current_menu == MENU_ALARM_TIME) {
-            hd44780_gotoxy(0, 0);
-            hd44780_print("Time relay");
-
-            hd44780_gotoxy(1, 0);
-            hd44780_print(" On  ");
-            print_time(time_on);
-
-            hd44780_gotoxy(2, 0);
-            hd44780_print(" Off ");
-            print_time(time_off);
-
-            hd44780_gotoxy(current_menu_section + 1, 0);
-            hd44780_print(">");
+            print_menu_alarm_time();
         } else if (current_menu == MENU_LUX) {
-            hd44780_print("Lux relay");
-            hd44780_gotoxy(1, 0);
-            hd44780_print(" Start ");
-            hd44780_printint(lux_start);
-
-            hd44780_gotoxy(2, 0);
-            hd44780_print(" End   ");
-            hd44780_printint(lux_end);
-
-            hd44780_gotoxy(current_menu_section + 1, 0);
-            hd44780_print(">");
+            print_menu_lux();
         } else if (current_menu == MENU_TEMP) {
-            hd44780_print("Temp relay");
-            hd44780_gotoxy(1, 0);
-            hd44780_print(" Start ");
-            hd44780_printint(temp_start);
-
-            hd44780_gotoxy(2, 0);
-            hd44780_print(" End   ");
-            hd44780_printint(temp_end);
-
-            hd44780_gotoxy(current_menu_section + 1, 0);
-            hd44780_print(">");
+            print_menu_temp();
         }
 
 		char key = read_keypad();
 
 		if (key == '*') {
-			current_menu = current_menu + 1;
-            if (current_menu > 4) {
-                current_menu = MENU_MAIN;
-            }
-
-            current_menu_section = 0;
-            current_time_component = 0;
-            
-            hd44780_cmd(0x01);
-            _delay_ms(3);
+			next_menu();
 		} else if (key == '#') {
-			current_menu_section = current_menu_section + 1;
-            current_time_component = 0;
-            if (current_menu == MENU_ALARM_TIME && current_menu_section > MENU_TIME_OFF) {
-                current_menu_section = MENU_TIME_ON;
-            }
-
-            if (current_menu == MENU_TEMP && current_menu_section > MENU_TEMP_END) {
-                current_menu_section = MENU_TEMP_START;
-            }
-
-            if (current_menu == MENU_LUX && current_menu_section > MENU_LUX_END) {
-                current_menu_section = MENU_LUX_START;
-            }
-            
-            hd44780_cmd(0x01);
-            _delay_ms(3);
+            next_menu_item();
 		} else {
 
             if (current_menu == MENU_TIME) {
@@ -418,34 +414,6 @@ int main()
                     temp_end = val;
                 }
             }
-
-
-
         }
-
-
 	}
-
-    // float ldrLux, ntc;
-  
-  	//uart_init(57600, 1);
-	//adc_init();
-
-    	// while(1) 
-        // {
-        //     char key = read_keypad();
-        //     adc_set_channel(3);
-        //     ldrLux = conversion_lux(adc_read());
-        //     hd44780_gotoxy(0, 0);
-        //     hd44780_print("\nLux: ");
-        //     hd44780_gotoxy(0, 14);
-        //     hd44780_printfloat(ldrLux);
-
-        //     adc_set_channel(4);
-        //     ntc = conversion_temp(adc_read());
-        //     hd44780_gotoxy(1, 0);
-        //     hd44780_print("\nTemperatura: ");
-        //     hd44780_gotoxy(1, 14);
-        //     hd44780_printfloat(ntc);
-        // }
 }

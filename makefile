@@ -27,8 +27,9 @@ all:
 	$(CC) $(CFLAGS) -c keypad.c -o keypad.o
 	$(CC) $(CFLAGS) -c uart.c -o uart.o
 	$(CC) $(CFLAGS) -c print.c -o print.o
+	$(CC) $(CFLAGS) -c conversion.c -o conversion.o
 	$(CC) $(CFLAGS) -c main.c -o main.o
-	$(CC) $(CFLAGS) adc.o hd44780.o uart.o keypad.o print.o main.o -o code.elf
+	$(CC) $(CFLAGS) adc.o hd44780.o uart.o keypad.o print.o conversion.o main.o -o code.elf
 	$(OBJCOPY) -R .eeprom -O ihex code.elf code.hex
 	$(OBJDUMP) -d code.elf > code.lst
 	$(OBJDUMP) -h code.elf > code.sec
