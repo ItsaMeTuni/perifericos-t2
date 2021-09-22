@@ -1,2 +1,0 @@
-
-void interaction_loop();
